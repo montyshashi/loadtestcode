@@ -1,6 +1,7 @@
 {
     "event_hub_connection_string": "<connection_string>",
     "event_hub_name": "<eventhub_name>",
+    "batch_size": 10,
     "master_event": {
       "prop": "value"
     },

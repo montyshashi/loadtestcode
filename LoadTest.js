@@ -17,6 +17,7 @@ let argv = require('minimist')(process.argv.slice(2), {
 let config_json = {
     "event_hub_connection_string": "<connection_string>",
     "event_hub_name": "<eventhub_name>",
+    "batch_size": 10,
     "master_event": {
         "prop": "value"
     },
@@ -51,6 +52,12 @@ let uid_xid_csv = config.uid_xid_csv;
 const event_hub_connection_string = config.event_hub_connection_string;
 const event_hub_name = config.event_hub_name;
 const master_event = config.master_event;
+
+let batch_size = parseInt(config.batch_size);
+
+if (!batch_size && batch_size < 1) {
+    batch_size = 1;
+}
 
 if (!(event_hub_connection_string && event_hub_name && master_event)) {
     console.log("Config invalid. Must be of this form:\n\n" + config_json_pretty);
@@ -164,14 +171,24 @@ async function process_metrics(messages) {
  * @param {number} interval seconds over which to feed the event stream to the target
  */
 async function feeder(client, events, interval) {
-    let period = (interval / events) * 1000; // Time between events in milliseconds
+    let period = (interval / events) * 1000 * batch_size; // Time between event batches in milliseconds
     let events_left = events;
     while (events_left > 0) {
         events_left--;
         let start = moment();
-        let event = gen_event();
+
+        let num_events = batch_size;
+        if (events_left < batch_size) {
+            num_events = events_left;
+        }
+
         let batch = await client.createBatch();
-        batch.tryAdd({body: event});
+
+        for (let i of Array(num_events).keys()) {
+            let event = gen_event();
+            batch.tryAdd({body: event});
+        }
+        
         try {
             await client.sendBatch(batch);
         } catch (err) {
