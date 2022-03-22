@@ -14,39 +14,83 @@ let argv = require('minimist')(process.argv.slice(2), {
     }
 });
 
-///////////////////
-/* Configuration */
-///////////////////
-const uid_xid_csv = 'load_uid_xid.csv';
-const event_hub_connection_string = ''; // Fill in connection string
-const event_hub_name = ''; // Fill in event hub name
-const master_event = {}; // Replace master event template with an event of the desired type
+let config_json = {
+    "event_hub_connection_string": "<connection_string>",
+    "event_hub_name": "<eventhub_name>",
+    "master_event": {
+        "prop": "value"
+    },
+    "uid_xid_csv": "OPTIONAL",
+};
+let config_json_pretty = JSON.stringify(config_json, null, 2);
 
+const config_path = "config.json";
+let data;
+try {
+    if (fs.existsSync(config_path)) {
+        data = fs.readFileSync(config_path);
+    } else {
+        console.log("'config.json' configuration file not found! Must be of this form:\n\n" + config_json_pretty);
+        exit(1);
+    }
+} catch(err) {
+    console.error(err);
+    exit(1);
+}
 
+let config;
+try {
+    config = JSON.parse(data);
+} catch (err) {
+    console.log("Config is invalid json: " + err);
+    exit(1);
+}
+
+let uid_xid_csv = config.uid_xid_csv;
+
+const event_hub_connection_string = config.event_hub_connection_string;
+const event_hub_name = config.event_hub_name;
+const master_event = config.master_event;
+
+if (!(event_hub_connection_string && event_hub_name && master_event)) {
+    console.log("Config invalid. Must be of this form:\n\n" + config_json_pretty);
+    exit(1);
+}
 
 let event_hub_clients = [];
-const users = get_users(uid_xid_csv);
+
+let users = null;
+if (uid_xid_csv) {
+    users = get_users(uid_xid_csv);
+}
 
 function get_users(usersCsv) {
-    let uidXidFile = fs.readFileSync(usersCsv, {
-        encoding: 'utf8',
-        flag: 'r'
-    });
-    let uidXids = uidXidFile.split("\n").slice(1);
-    
-    return uidXids.map(function (uidXid) {
-        let user = uidXid.split(",");
-        return {uid: user[0], xid: user[1]};
-    });
+    try {
+        let uidXidFile = fs.readFileSync(usersCsv, {
+            encoding: 'utf8',
+            flag: 'r'
+        });
+        let uidXids = uidXidFile.split("\n").slice(1);
+        
+        return uidXids.map(function (uidXid) {
+            let user = uidXid.split(",");
+            return {uid: user[0], xid: user[1]};
+        });
+    } catch (err) {
+        console.log("Could not read uid+xid csv file '" + usersCsv + "': " + err);
+        exit(1);
+    }
 }
 
 function get_random_uid() {
-    return users[Math.floor(Math.random() * uids.length)].uid;
+    return users[Math.floor(Math.random() * users.length)].uid;
 }
 
 function gen_event() {
     let event = JSON.parse(JSON.stringify(master_event));
-    event.user_id = get_random_uid();
+    if (users) {
+        event.user_id = get_random_uid();
+    }
     return event;
 }
 
@@ -126,12 +170,10 @@ async function feeder(client, events, interval) {
         events_left--;
         let start = moment();
         let event = gen_event();
+        let batch = await client.createBatch();
+        batch.tryAdd({body: event});
         try {
-            console.log("sending event");
-            await client.sendBatch([{
-                body: event,
-                partitionKey: event.id
-            }]);
+            await client.sendBatch(batch);
         } catch (err) {
             console.error('Send error: ' + err.message);
             throw err;
@@ -274,10 +316,6 @@ if (number_of_events > 0 && !interval) {
 }
 
 let estimated_minutes = interval / 60;
-if (estimated_minutes > 20) {
-    console.log('Run will take more than 20 minutes.');
-    process.exit(1);
-}
 
 let settings = calculate_settings(rate);
 
