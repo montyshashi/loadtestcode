@@ -11,6 +11,7 @@ let argv = require('minimist')(process.argv.slice(2), {
     alias: {
         t: 'time',
         e: 'events',
+        b: 'batchsize'
     }
 });
 
@@ -170,7 +171,7 @@ async function process_metrics(messages) {
  * @param {number} events count of events to send
  * @param {number} interval seconds over which to feed the event stream to the target
  */
-async function feeder(client, events, interval) {
+async function feeder(client, events, interval, batch_size) {
     let period = (interval / events) * 1000 * batch_size; // Time between event batches in milliseconds
     let events_left = events;
     while (events_left > 0) {
@@ -213,7 +214,7 @@ async function feeder(client, events, interval) {
  * @param {number} interval seconds over which to feed the event stream to the target
  * @returns {Promise<[(*|undefined)]>}
  */
-async function feeder_group(rate, feeders, interval) {
+async function feeder_group(rate, feeders, interval, batch_size) {
     // Create more clients if necessary
     if (feeders > event_hub_clients.length) {
         let needed = feeders - event_hub_clients.length;
@@ -230,7 +231,7 @@ async function feeder_group(rate, feeders, interval) {
     let promises = [];
     for (let i = 0; i < feeders; i++) {
         let start = moment();
-        promises.push(feeder(event_hub_clients[i], events, interval));
+        promises.push(feeder(event_hub_clients[i], events, interval, batch_size));
         if (i < (feeders - 1)) {
             let delay = offset - moment().diff(start);
             if (delay > 0) {
@@ -250,10 +251,10 @@ async function feeder_group(rate, feeders, interval) {
  * @param {number} interval
  * @returns {Promise<[(*|undefined)]>}
  */
-async function create_feeders(settings, interval) {
+async function create_feeders(settings, interval, batch_size) {
     let feeder_groups = [];
     for (let i = 0; i < settings.groups; i++) {
-        feeder_groups.push(feeder_group(settings.rate, settings.feeders, interval));
+        feeder_groups.push(feeder_group(settings.rate, settings.feeders, interval, batch_size));
     }
     return Promise.all(feeder_groups);
 }
@@ -305,6 +306,20 @@ if (argv.events) {
     }
 }
 
+if (argv.batchsize) { // Overwrite the batch_size in the config if it's passed in with the -b flag
+    let temp_batch_size;
+    if (typeof argv.batchsize == 'number') {
+        temp_batch_size = argv.batchsize;
+    } else {
+        temp_batch_size = parseInt(argv.batch_size, 10);
+    }
+    if (temp_batch_size < 1 || isNaN(temp_batch_size)) {
+        console.log('Batch size must be at least 1. Continuing with setting from config (' + batch_size + ')...');
+    } else {
+        batch_size = temp_batch_size;
+    }
+}
+
 if (!number_of_events && !interval) {
     console.log('You must give either the number of events or the run time.');
     process.exit(1);
@@ -343,11 +358,12 @@ console.log('Run estimated to take between ' + est_min.toString() + ' and ' + es
 console.log('Using ' + settings.groups.toString() +
     ' groups of ' + settings.feeders.toString() +
     ' feeder jobs running at ' + settings.rate.toString() +
-    ' events per second each.');
+    ' events per second each, with a batch size of ' + batch_size.toString() + 
+    ' events per batch.');
 console.log('Will send ' + (settings.groups * settings.feeders * settings.rate * interval) + ' events in total.');
 
 let start_time = moment();
-create_feeders(settings, interval).then(() => {
+create_feeders(settings, interval, batch_size).then(() => {
     let run_time = moment().diff(start_time);
     console.log('Run took ' + (run_time / 60000).toString() + ' minutes at ' +
         ((settings.groups * settings.feeders * settings.rate * interval) / (run_time / 1000)) +
