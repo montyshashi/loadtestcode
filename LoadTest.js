@@ -175,13 +175,13 @@ async function feeder(client, events, interval, batch_size) {
     let period = (interval / events) * 1000 * batch_size; // Time between event batches in milliseconds
     let events_left = events;
     while (events_left > 0) {
-        events_left--;
         let start = moment();
 
         let num_events = batch_size;
         if (events_left < batch_size) {
             num_events = events_left;
         }
+        events_left -= num_events;
 
         let batch = await client.createBatch();
 
