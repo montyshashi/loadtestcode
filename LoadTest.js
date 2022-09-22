@@ -15,60 +15,17 @@ let argv = require('minimist')(process.argv.slice(2), {
     }
 });
 
-// DO NOT MODIFY, MODIFY THE CONFIG.JSON FILE INSTEAD
-let config_json = {
-    "event_hub_connection_string": "<event hub connection string>",
-    "event_hub_name": "<event hub name>",
-    "batch_size": 10,
-    "master_event": {},
-    "uid_xid_csv": "load_uid_xid.csv",
-};
-let config_json_pretty = JSON.stringify(config_json, null, 2);
 
-const config_path = "config.json";
-let data;
-try {
-    if (fs.existsSync(config_path)) {
-        data = fs.readFileSync(config_path);
-    } else {
-        console.log("'config.json' configuration file not found! Must be of this form:\n\n" + config_json_pretty);
-        exit(1);
+/******** MODIFY FOR SPECIFIC APP/EVENT AS NEEDED ********/
+function gen_event() {
+    let event = JSON.parse(JSON.stringify(master_event));
+
+    if (users) {
+        // If there is a uid/xid csv file being used, this is where the uid is replaced for the event
+        event.user_id = get_random_uid();
     }
-} catch(err) {
-    console.error(err);
-    exit(1);
-}
 
-let config;
-try {
-    config = JSON.parse(data);
-} catch (err) {
-    console.log("Config is invalid json: " + err);
-    exit(1);
-}
-
-let uid_xid_csv = config.uid_xid_csv;
-
-const event_hub_connection_string = config.event_hub_connection_string;
-const event_hub_name = config.event_hub_name;
-const master_event = config.master_event;
-
-let batch_size = parseInt(config.batch_size);
-
-if (!batch_size && batch_size < 1) {
-    batch_size = 1;
-}
-
-if (!(event_hub_connection_string && event_hub_name && master_event)) {
-    console.log("Config invalid. Must be of this form:\n\n" + config_json_pretty);
-    exit(1);
-}
-
-let event_hub_clients = [];
-
-let users = null;
-if (uid_xid_csv) {
-    users = get_users(uid_xid_csv);
+    return event;
 }
 
 function get_users(usersCsv) {
@@ -93,14 +50,7 @@ function get_random_uid() {
     return users[Math.floor(Math.random() * users.length)].uid;
 }
 
-function gen_event() {
-    let event = JSON.parse(JSON.stringify(master_event));
-    if (users) {
-        event[0].data.message.accrual.userId = get_random_uid();
-    }
-    event[0].data.message = JSON.stringify(event[0].data.message);
-    return event;
-}
+
 
 async function sleep(milliseconds) {
     return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -257,6 +207,70 @@ async function create_feeders(settings, interval, batch_size) {
         feeder_groups.push(feeder_group(settings.rate, settings.feeders, interval, batch_size));
     }
     return Promise.all(feeder_groups);
+}
+
+
+
+/**********************************************************************************/
+/* Start of script ****************************************************************/
+/**********************************************************************************/
+
+
+
+// DO NOT MODIFY, MODIFY THE CONFIG.JSON FILE INSTEAD
+let config_json = {
+    "event_hub_connection_string": "<event hub connection string>",
+    "event_hub_name": "<event hub name>",
+    "batch_size": 10,
+    "master_event": {},
+    "uid_xid_csv": "load_uid_xid.csv",
+};
+let config_json_pretty = JSON.stringify(config_json, null, 2);
+
+const config_path = "config.json";
+let data;
+try {
+    if (fs.existsSync(config_path)) {
+        data = fs.readFileSync(config_path);
+    } else {
+        console.log("'config.json' configuration file not found! Must be of this form:\n\n" + config_json_pretty);
+        exit(1);
+    }
+} catch(err) {
+    console.error(err);
+    exit(1);
+}
+
+let config;
+try {
+    config = JSON.parse(data);
+} catch (err) {
+    console.log("Config is invalid json: " + err);
+    exit(1);
+}
+
+let uid_xid_csv = config.uid_xid_csv;
+
+const event_hub_connection_string = config.event_hub_connection_string;
+const event_hub_name = config.event_hub_name;
+const master_event = config.master_event;
+
+let batch_size = parseInt(config.batch_size);
+
+if (!batch_size && batch_size < 1) {
+    batch_size = 1;
+}
+
+if (!(event_hub_connection_string && event_hub_name && master_event)) {
+    console.log("Config invalid. Must be of this form:\n\n" + config_json_pretty);
+    exit(1);
+}
+
+let event_hub_clients = [];
+
+let users = null;
+if (uid_xid_csv) {
+    users = get_users(uid_xid_csv);
 }
 
 let interval = 0;
