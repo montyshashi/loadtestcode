@@ -15,14 +15,13 @@ let argv = require('minimist')(process.argv.slice(2), {
     }
 });
 
+// DO NOT MODIFY, MODIFY THE CONFIG.JSON FILE INSTEAD
 let config_json = {
-    "event_hub_connection_string": "<connection_string>",
-    "event_hub_name": "<eventhub_name>",
+    "event_hub_connection_string": "<event hub connection string>",
+    "event_hub_name": "<event hub name>",
     "batch_size": 10,
-    "master_event": {
-        "prop": "value"
-    },
-    "uid_xid_csv": "OPTIONAL",
+    "master_event": {},
+    "uid_xid_csv": "load_uid_xid.csv",
 };
 let config_json_pretty = JSON.stringify(config_json, null, 2);
 
@@ -97,8 +96,9 @@ function get_random_uid() {
 function gen_event() {
     let event = JSON.parse(JSON.stringify(master_event));
     if (users) {
-        event.user_id = get_random_uid();
+        event[0].data.message.accrual.userId = get_random_uid();
     }
+    event[0].data.message = JSON.stringify(event[0].data.message);
     return event;
 }
 
